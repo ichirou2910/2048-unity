@@ -4,6 +4,7 @@ using System.Linq;
 using DG.Tweening;
 using G2048.Enums;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using Random = UnityEngine.Random;
 
@@ -16,12 +17,22 @@ public class GameManager : MonoBehaviour
     [SerializeField] private SpriteRenderer boardRenderer;
     [SerializeField] private float blockMovingTime;
 
+    [SerializeField] private GameObject _winScreen;
+    [SerializeField] private GameObject _loseScreen;
+
     [SerializeField] private List<BlockType> blockTypes;
 
     private List<Node> _nodes;
     private List<Block> _blocks;
 
     private GameStateEnum _gameState;
+
+    private PlayerInput _playerInput;
+
+    void Awake()
+    {
+        _playerInput = GetComponent<PlayerInput>();
+    }
 
     void Start()
     {
@@ -34,7 +45,7 @@ public class GameManager : MonoBehaviour
     void OnMove(InputValue value)
     {
         if (_gameState != GameStateEnum.PlayerInput) return;
-        
+
         var dir = value.Get<Vector2>();
         dir.Normalize();
         ShiftBlocks(dir);
@@ -58,9 +69,23 @@ public class GameManager : MonoBehaviour
             case GameStateEnum.MovingBlocks:
                 break;
             case GameStateEnum.Win:
+            {
+                _playerInput.SwitchCurrentActionMap("UI");
+                _winScreen.SetActive(true);
+                var eventSystem = EventSystem.current;
+                var retryButton = _winScreen.transform.Find("Retry Button").gameObject;
+                eventSystem.SetSelectedGameObject(retryButton);
                 break;
+            }
             case GameStateEnum.Lose:
+            {
+                _playerInput.SwitchCurrentActionMap("UI");
+                _loseScreen.SetActive(true);
+                var eventSystem = EventSystem.current;
+                var retryButton = _winScreen.transform.Find("Retry Button").gameObject;
+                eventSystem.SetSelectedGameObject(retryButton);
                 break;
+            }
             default:
                 throw new ArgumentOutOfRangeException(nameof(newState), newState, null);
         }
@@ -99,8 +124,7 @@ public class GameManager : MonoBehaviour
 
         if (freeNodes.Count() <= 1)
         {
-            // TODO: Lost the game
-            return;
+            ChangeState(GameStateEnum.Lose);
         }
 
         ChangeState(GameStateEnum.PlayerInput);
@@ -166,6 +190,10 @@ public class GameManager : MonoBehaviour
             {
                 MergeBlocks(block.MergingBlock, block);
             }
+
+            // If 2048 block exists
+            if (_blocks.Any(x => x.Value == 8))
+                ChangeState(GameStateEnum.Win);
 
             ChangeState(GameStateEnum.SpawningBlocks);
         });
