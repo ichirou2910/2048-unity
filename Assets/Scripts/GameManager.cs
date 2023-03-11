@@ -2,10 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using DG.Tweening;
+using Events;
 using G2048.Enums;
 using UnityEngine;
-using UnityEngine.EventSystems;
-using UnityEngine.InputSystem;
 using Random = UnityEngine.Random;
 
 public class GameManager : MonoBehaviour
@@ -16,7 +15,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private Block blockPrefab;
     [SerializeField] private SpriteRenderer boardRenderer;
     [SerializeField] private float blockMovingTime;
-
+    [SerializeField] private float movingThreshold;
     [SerializeField] private GameObject _winScreen;
     [SerializeField] private GameObject _loseScreen;
 
@@ -27,12 +26,14 @@ public class GameManager : MonoBehaviour
 
     private GameStateEnum _gameState;
 
-    private PlayerInput _playerInput;
+    private Vector2 mousePos = new(-1, -1);
+    private bool isMoving;
 
-    void Awake()
-    {
-        _playerInput = GetComponent<PlayerInput>();
-    }
+#if UNITY_EDITOR
+    private const int FINAL_BLOCK = 8;
+#else
+    private const int FINAL_BLOCK = 2048;
+#endif
 
     void Start()
     {
@@ -42,13 +43,45 @@ public class GameManager : MonoBehaviour
         ChangeState(GameStateEnum.InitBoard);
     }
 
-    void OnMove(InputValue value)
+    void Update()
     {
-        if (_gameState != GameStateEnum.PlayerInput) return;
+        if (_gameState == GameStateEnum.PlayerInput && !isMoving)
+        {
+            if (Input.GetMouseButton(0))
+            {
+                Vector2 currentMousePos = Input.mousePosition;
+                if (mousePos.x < 0)
+                    mousePos = currentMousePos;
+                if (currentMousePos != mousePos)
+                {
+                    float distance = Vector2.Distance(currentMousePos, mousePos);
+                    if (distance >= movingThreshold)
+                    {
+                        isMoving = true;
+                        Vector2 finalDirection = Vector2.zero;
+                        float diffX = currentMousePos.x - mousePos.x;
+                        float diffY = currentMousePos.y - mousePos.y;
+                        if (Mathf.Abs(diffX) >= Mathf.Abs(diffY))
+                        {
+                            finalDirection.x = diffX;
+                        }
+                        else
+                        {
+                            finalDirection.y = diffY;
+                        }
 
-        var dir = value.Get<Vector2>();
-        dir.Normalize();
-        ShiftBlocks(dir);
+                        finalDirection.Normalize();
+                        ShiftBlocks(finalDirection);
+                    }
+                }
+            }
+        }
+
+        if (Input.GetMouseButtonUp(0))
+        {
+            mousePos.x = -1;
+            isMoving = false;
+        }
     }
 
     private void ChangeState(GameStateEnum newState)
@@ -70,20 +103,12 @@ public class GameManager : MonoBehaviour
                 break;
             case GameStateEnum.Win:
             {
-                _playerInput.SwitchCurrentActionMap("UI");
                 _winScreen.SetActive(true);
-                var eventSystem = EventSystem.current;
-                var retryButton = _winScreen.transform.Find("Retry Button").gameObject;
-                eventSystem.SetSelectedGameObject(retryButton);
                 break;
             }
             case GameStateEnum.Lose:
             {
-                _playerInput.SwitchCurrentActionMap("UI");
                 _loseScreen.SetActive(true);
-                var eventSystem = EventSystem.current;
-                var retryButton = _winScreen.transform.Find("Retry Button").gameObject;
-                eventSystem.SetSelectedGameObject(retryButton);
                 break;
             }
             default:
@@ -121,13 +146,14 @@ public class GameManager : MonoBehaviour
         foreach (var fNode in freeNodes.Take(amount))
             SpawnBlockAt(fNode, nextSpawnValue);
 
-
         if (freeNodes.Count() <= 1)
         {
             ChangeState(GameStateEnum.Lose);
         }
-
-        ChangeState(GameStateEnum.PlayerInput);
+        else
+        {
+            ChangeState(GameStateEnum.PlayerInput);
+        }
     }
 
     void SpawnBlockAt(Node node, int value)
@@ -192,10 +218,10 @@ public class GameManager : MonoBehaviour
             }
 
             // If 2048 block exists
-            if (_blocks.Any(x => x.Value == 8))
+            if (_blocks.Any(x => x.Value == FINAL_BLOCK))
                 ChangeState(GameStateEnum.Win);
-
-            ChangeState(GameStateEnum.SpawningBlocks);
+            else
+                ChangeState(GameStateEnum.SpawningBlocks);
         });
     }
 
@@ -204,6 +230,7 @@ public class GameManager : MonoBehaviour
         SpawnBlockAt(baseBlock.Node, baseBlock.Value * 2);
         RemoveBlock(baseBlock);
         RemoveBlock(otherBlock);
+        this.PublishEvent(EventID.OnPlayerScore, baseBlock.Value * 2);
     }
 
     List<Block> BuildBlocksTraversal(Vector2 direction)
